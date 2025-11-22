@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vidi-Q | AI Video & Quiz Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <script async
+        src="https://www.ailibrary.ai/cec.js?namespace=ellafromed-20250916043536&logo=https://www.ailibrary.ai/ailibrary.svg"></script>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .gradient-text {
+            background: -webkit-linear-gradient(45deg, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-900 text-white antialiased">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, createContext, useContext, useMemo } = React;
+
+        // --- INITIALIZE SUPABASE ---
+        const SUPABASE_URL = ''; //enter your url
+        const SUPABASE_ANON_KEY = ''; //enter your anon key
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+
+        /*
+        -- REQUIRED SUPABASE SETUP --
+        
+        This project uses Supabase for user authentication (Login/Signup).
+        You only need to create a project on Supabase and add your URL and Anon Key above.
+        No database tables are required for this version of the app.
+        */
+
+        // --- API Services ---
+        const apiService = {
+            backendUrl: 'http://localhost:5000',
+
+            // Function to generate video
+            async generateVideo(prompt) {
+                try {
+                    // Make request to backend to generate video
+                    const response = await fetch(`${this.backendUrl}/api/generate-video`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompt: prompt }),
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data.error || 'Failed to generate video.');
+                    }
+
+                    // Full video URL
+                    const fullVideoUrl = this.backendUrl + data.video_url;
+
+                    // Call sendToZapier after the video is successfully generated
+                    await this.sendToZapier();
+
+                    return {
+                        title: data.title,
+                        video_file_url: fullVideoUrl,
+                        caption_content: data.caption_content,
+                    };
+                } catch (error) {
+                    console.error('Error generating video:', error);
+                    throw error; // Optionally rethrow to handle in caller
+                }
+            },
+            async sendToZapier(videos) {
+                try {
+                    // Get the authenticated user from Supabase
+                    const { data, error } = await supabase.auth.getUser();
+                    if (error) {
+                        console.error("Error fetching user:", error);
+                        return;
+                    }
+
+                    const user = data.user;
+
+                    // Prepare the payload to send to Zapier, including the videos
+                    const payload = {
+                        name: user.user_metadata?.name,
+                        phone: user.user_metadata?.phone,
+                        email: user.email, // Attach the videos data to the payload
+                    };
+
+                    console.log("Payload being sent to Zapier:", payload);
+
+                    // Send data to Flask backend
+                    const response = await fetch("http://localhost:5000/send-to-zapier", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload),
+                    });
+
+                    // Check the response from the backend
+                    const result = await response.json();
+                    if (response.ok) {
+                        console.log("Message from backend:", result.message);
+                    } else {
+                        console.error("Error from backend:", result.error || "Unknown error");
+                    }
+
+                } catch (error) {
+                    console.error("Error sending data to Zapier:", error);
+                }
+            }
+        };
+
+        const localMediaService = {
+            // Function to fetch the list of videos
+            async getVideos() {
+                try {
+                    const response = await fetch(`${apiService.backendUrl}/api/list-videos`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const videos = await response.json();
+
+                    // Optionally, fetch details for each video (if needed)
+                    for (const video of videos) {
+                        const videoDetails = await this.getVideoById(video.id);
+                        console.log("Video details:", videoDetails); // Log details for each video
+                    }
+
+                    return videos; // Return the list of videos
+
+                } catch (error) {
+                    console.error("Could not fetch the list of local videos from the backend.", error);
+                    return []; // Return empty array on failure
+                }
+            },
+
+            async getVideoById(id) {
+                try {
+                    const response = await fetch(`${apiService.backendUrl}/api/video-details/${id}`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const video = await response.json();
+                    // The backend should return the full URL, but we'll ensure it here.
+                    if (video.video_file_url && !video.video_file_url.startsWith('http')) {
+                        video.video_file_url = apiService.backendUrl + video.video_file_url;
+                    }
+                    return video;
+                } catch (error) {
+                    console.error(`Could not fetch details for video ID ${id} from the backend.`, error);
+                    return null; // Return null on failure
+                }
+            }
+        };
+
+
+        const geminiApiService = {
+            async generateQuizWithGemini(captionContent, videoId) {
+                const apiKey = ""; //give your gemini key
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+
+                const systemPrompt = `You are a quiz creator. Based on the transcript, create a JSON quiz with 4 multiple-choice questions. Each must have 'id', 'text', 'options' (array of 4 strings), and 'answer'. Output only the JSON object.`;
+                const userQuery = `Transcript:\n---\n${captionContent}\n---`;
+
+                const payload = {
+                    contents: [{ parts: [{ text: userQuery }] }],
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: { type: "OBJECT", properties: { "quiz_id": { "type": "STRING" }, "video_id": { "type": "STRING" }, "questions": { "type": "ARRAY", "items": { "type": "OBJECT", "properties": { "id": { "type": "NUMBER" }, "text": { "type": "STRING" }, "options": { "type": "ARRAY", "items": { "type": "STRING" } }, "answer": { "type": "STRING" } }, "required": ["id", "text", "options", "answer"] } } }, "required": ["quiz_id", "video_id", "questions"] }
+                    }
+                };
+
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+
+                if (!response.ok) {
+                    const err = await response.text();
+                    throw new Error(`Gemini API Error: ${err}`);
+                }
+
+                const result = await response.json();
+                const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (jsonText) {
+                    const quizData = JSON.parse(jsonText);
+                    quizData.video_id = videoId;
+                    return quizData;
+                } else {
+                    throw new Error("Failed to parse quiz data from Gemini response.");
+                }
+            }
+        };
+
+        const AppContext = createContext();
+
+        function AppProvider({ children }) {
+            const [route, setRoute] = useState(window.location.hash || '#/');
+            const [session, setSession] = useState(null);
+            const [isSessionLoading, setIsSessionLoading] = useState(true);
+            const [currentQuiz, setCurrentQuiz] = useState(null);
+            const [loadingText, setLoadingText] = useState("");
+            const [errorMessage, setErrorMessage] = useState(null);
+            const [lastGeneratedVideo, setLastGeneratedVideo] = useState(null);
+
+            useEffect(() => {
+                supabase.auth.getSession().then(({ data: { session } }) => {
+                    setSession(session);
+                    setIsSessionLoading(false);
+                });
+
+                const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+                    setSession(session);
+                });
+
+                const handleHashChange = () => setRoute(window.location.hash || '#/');
+                window.addEventListener('hashchange', handleHashChange);
+
+                return () => {
+                    subscription?.unsubscribe();
+                    window.removeEventListener('hashchange', handleHashChange);
+                };
+            }, []);
+
+            const navigate = (path) => { window.location.hash = path; };
+
+            const appContextValue = useMemo(() => ({
+                route, navigate, session, isSessionLoading, currentQuiz, setCurrentQuiz,
+                loadingText, setLoadingText, errorMessage, setErrorMessage,
+                lastGeneratedVideo, setLastGeneratedVideo
+            }), [route, session, isSessionLoading, currentQuiz, loadingText, errorMessage, lastGeneratedVideo]);
+
+            return <AppContext.Provider value={appContextValue}>{children}</AppContext.Provider>;
+        }
+
+        // --- UI Components ---
+        function LoadingSpinner({ text }) {
+            return (
+                <div className="flex flex-col items-center justify-center space-y-4 p-8 text-center">
+                    <svg className="animate-spin h-12 w-12 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    {text && <p className="text-xl font-semibold text-gray-200">{text}</p>}
+                </div>
+            );
+        }
+
+        function Header() {
+            const { session, navigate } = useContext(AppContext);
+            const handleLogout = async () => {
+                await supabase.auth.signOut();
+                navigate('#/');
+            };
+            return (
+                <header className="p-4 bg-gray-900/80 backdrop-blur-sm sticky top-0 z-50 border-b border-gray-800">
+                    <div className="container mx-auto flex justify-between items-center">
+                        <h1 onClick={() => navigate(session ? '#/dashboard' : '/')} className="text-3xl font-bold cursor-pointer gradient-text">Vidi-Q</h1>
+                        {session && (<button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-5 rounded-lg transition-transform transform hover:scale-105">Logout</button>)}
+                    </div>
+                </header>
+            );
+        }
+
+        // --- Pages ---
+        function LandingPage() {
+            const { navigate } = useContext(AppContext);
+            return (
+                <div className="flex flex-col items-center justify-center min-h-screen text-center -mt-16 px-4">
+                    <div className="max-w-3xl">
+                        <h1 className="text-6xl md:text-7xl font-extrabold mb-4"><span className="gradient-text">Unlock Knowledge</span> with AI-Powered Video Learning.</h1>
+                        <p className="text-xl md:text-2xl text-gray-400 mb-10">Turn any topic into an engaging video lesson and an interactive quiz, instantly.</p>
+                        <button onClick={() => navigate('#/login')} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-10 rounded-lg text-xl transition-transform transform hover:scale-105 shadow-lg shadow-blue-500/20">Get Started Now</button>
+                    </div>
+                </div>
+            );
+        }
+
+        function AuthPage() {
+            const { navigate } = useContext(AppContext);
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [authError, setAuthError] = useState(null);
+            const [name, setName] = useState('');
+            const [phone, setPhone] = useState('');
+
+            const handleAuth = async (action) => {
+                setIsSubmitting(true);
+                setAuthError(null);
+                const { error } = action === 'login'
+                    ? await supabase.auth.signInWithPassword({ email, password })
+                    : await supabase.auth.signUp({ email, password, options: { data: { name, phone } } });
+
+                if (error) {
+                    setAuthError(error.message);
+                } else {
+                    navigate('#/dashboard');
+                }
+                setIsSubmitting(false);
+            };
+
+            return (
+                <div className="flex flex-col items-center justify-center py-12" style={{ minHeight: '85vh' }}>
+                    <div className="w-full max-w-md p-8 space-y-6 bg-gray-800 rounded-2xl shadow-lg">
+                        <h2 className="text-3xl font-bold text-center">Welcome Back</h2>
+                        <p className="text-center text-gray-400">Sign in to continue your learning journey.</p>
+                        {authError && <div className="bg-red-900/50 text-red-300 p-3 rounded-md text-center">{authError}</div>}
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-sm font-bold text-gray-400 block mb-2">Email</label>
+                                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3 bg-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            <div>
+                                <label className="text-sm font-bold text-gray-400 block mb-2">Password</label>
+                                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3 bg-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="text-sm font-bold text-gray-400 block mb-2">Full Name</label>
+                            <input
+                                type="text"
+                                value={name}
+                                onChange={e => setName(e.target.value)}
+                                className="w-full p-3 bg-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-sm font-bold text-gray-400 block mb-2">Phone Number</label>
+                            <input
+                                type="tel"
+                                value={phone}
+                                onChange={e => setPhone(e.target.value)}
+                                className="w-full p-3 bg-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+                        <div className="flex flex-col space-y-3">
+                            <button onClick={() => handleAuth('login')} disabled={isSubmitting || !email || !password} className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition disabled:bg-gray-600">{isSubmitting ? 'Signing In...' : 'Sign In'}</button>
+                            <button onClick={() => handleAuth('signup')} disabled={isSubmitting || !email || !password} className="w-full py-3 px-4 bg-gray-600 hover:bg-gray-700 rounded-lg font-semibold transition disabled:bg-gray-500">{isSubmitting ? 'Creating...' : 'Create Account'}</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function LoadingPage() {
+            const { loadingText, errorMessage, navigate } = useContext(AppContext);
+            return (
+                <div className="container mx-auto p-4 flex flex-col items-center justify-center" style={{ minHeight: '85vh' }}>
+                    <div className="text-center">
+                        <LoadingSpinner text={loadingText} />
+                        {errorMessage && (
+                            <div className="mt-8 text-center">
+                                <div className="bg-red-900/50 border border-red-700 text-red-300 p-4 rounded-lg mb-6 fade-in"><strong>Generation Failed:</strong> {errorMessage}</div>
+                                <button onClick={() => navigate('#/dashboard')} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg text-lg">Back to Dashboard</button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        function DashboardPage() {
+            const { navigate, setCurrentQuiz, setLoadingText, setErrorMessage, setLastGeneratedVideo } = useContext(AppContext);
+            const [prompt, setPrompt] = useState('');
+            const [localVideos, setLocalVideos] = useState([]);
+            const [isFetching, setIsFetching] = useState(true);
+
+            useEffect(() => {
+                const fetchVideos = async () => {
+                    setIsFetching(true);
+                    const videos = await localMediaService.getVideos();
+                    setLocalVideos(videos);
+                    setIsFetching(false);
+                };
+                fetchVideos();
+            }, []);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                if (!prompt.trim()) return;
+
+                navigate('#/loading');
+                setErrorMessage(null);
+
+                try {
+                    setLoadingText("Warming up the AI engine...We will notify you via mail and phone call when the video is ready");
+                    const videoData = await apiService.generateVideo(prompt);
+
+                    setLoadingText("Crafting your interactive quiz...");
+                    const quiz = await geminiApiService.generateQuizWithGemini(videoData.caption_content, 'temp_id');
+                    setCurrentQuiz(quiz);
+
+                    setLastGeneratedVideo(videoData);
+
+                    navigate('#/watch/temp');
+
+                } catch (error) {
+                    console.error("Generation failed:", error);
+                    setErrorMessage(error.message || "An unexpected error occurred. Please try again.");
+                }
+            };
+
+            return (
+                <div className="container mx-auto p-4">
+                    <div className="w-full max-w-3xl mx-auto text-center">
+                        <h2 className="text-5xl font-extrabold mb-4">What do you want to learn today?</h2>
+                        <p className="text-xl text-gray-400 mb-8">Describe a topic, and our AI will create a video and quiz tailored for you.</p>
+                        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} className="w-full p-5 bg-gray-800 border-2 border-gray-700 rounded-lg text-lg focus:ring-4 focus:ring-blue-500/50 focus:border-blue-500 focus:outline-none transition" rows="4" placeholder="e.g., 'Explain how black holes are formed'"></textarea>
+                            <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-lg text-xl transition-transform transform hover:scale-105 disabled:bg-gray-600" disabled={!prompt.trim()}>Generate Video & Quiz</button>
+                        </form>
+                    </div>
+                    <div className="ailibrary-embed"></div>
+                    <div className="mt-16 pt-8 border-t border-gray-700">
+                        <h3 className="text-4xl font-extrabold mb-8">Your Previous Videos</h3>
+                        {isFetching ? <LoadingSpinner /> :
+                            localVideos.length === 0 ? (
+                                <div className="text-center bg-gray-800 p-8 rounded-lg">
+                                    <p className="text-gray-400 mt-2">No previously generated videos were found.</p>
+                                    <p className="text-sm text-gray-500 mt-2">Ensure your backend server is running and can access the media directory.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 fade-in">
+                                    {localVideos.map(video => (
+                                        <div key={video.id} onClick={() => navigate(`#/watch/${video.id}`)} className="bg-gray-800 rounded-lg overflow-hidden cursor-pointer group hover:shadow-2xl hover:shadow-blue-500/20 transition-all transform hover:-translate-y-1">
+                                            <div className="bg-black aspect-video flex items-center justify-center">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-600 group-hover:text-blue-500 transition" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" /></svg>
+                                            </div>
+                                            <div className="p-4">
+                                                <h3 className="font-bold text-lg truncate group-hover:text-blue-400">{video.title}</h3>
+                                                <p className="text-sm text-gray-400">{new Date(video.created_at).toLocaleDateString()}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )
+                        }
+                    </div>
+                </div>
+            );
+        }
+
+        function VideoPlayerPage() {
+            const { route, navigate, setCurrentQuiz, lastGeneratedVideo } = useContext(AppContext);
+            const videoId = route.split('/')[2];
+            const [videoDetails, setVideoDetails] = useState(null);
+            const [videoEnded, setVideoEnded] = useState(false);
+            const [isLoading, setIsLoading] = useState(true);
+            const [isQuizLoading, setIsQuizLoading] = useState(false);
+            const [isVideoLoading, setIsVideoLoading] = useState(true);
+            const [error, setError] = useState(null);
+
+            useEffect(() => {
+                const fetchVideoDetails = async () => {
+                    if (!videoId) return;
+                    setIsLoading(true);
+                    setError(null);
+
+                    if (videoId === 'temp') {
+                        if (lastGeneratedVideo) {
+                            setVideoDetails(lastGeneratedVideo);
+                        } else {
+                            setError("Could not find the generated video data. Please try creating it again.");
+                        }
+                        setIsLoading(false);
+                    } else {
+                        const foundVideo = await localMediaService.getVideoById(videoId);
+                        if (foundVideo) {
+                            setVideoDetails(foundVideo);
+                        } else {
+                            setError("Could not find the requested video. Ensure the backend is running and the video ID is correct.");
+                        }
+                        setIsLoading(false);
+                    }
+                };
+                fetchVideoDetails();
+            }, [videoId, lastGeneratedVideo]);
+
+            const handleTakeQuiz = async () => {
+                if (!videoDetails) return;
+
+                // This part for newly generated videos is fine.
+                if (videoId === 'temp') {
+                    navigate('#/quiz/temp');
+                    return;
+                }
+
+                // --- Start of Fix ---
+                // Check if the transcript content exists before making an API call.
+                if (!videoDetails.caption_content || videoDetails.caption_content.trim() === '') {
+                    setError("Cannot generate quiz: Transcript is missing for this video. Please ensure the backend provides it.");
+                    console.error("Aborting quiz generation because caption_content is missing or empty.", videoDetails);
+                    return;
+                }
+                // --- End of Fix ---
+
+                setIsQuizLoading(true);
+                try {
+                    // This call now only runs if caption_content is confirmed to exist.
+                    const quiz = await geminiApiService.generateQuizWithGemini(videoDetails.caption_content, videoDetails.id);
+                    setCurrentQuiz(quiz);
+                    navigate(`#/quiz/${videoId}`);
+                } catch (e) {
+                    // This error is likely caused by an invalid API key or network issue.
+                    setError("Failed to generate the quiz. Please check your Gemini API Key and network connection.");
+                    console.error("Error during quiz generation API call:", e);
+                } finally {
+                    setIsQuizLoading(false);
+                }
+            };
+
+            if (isLoading) return <div className="text-center mt-20"><LoadingSpinner /></div>
+            if (error) return <div className="text-center mt-20 p-4">{error} Please <button onClick={() => navigate('#/dashboard')} className="text-blue-400 hover:underline">return to your dashboard</button>.</div>;
+            if (!videoDetails) return null;
+
+            return (
+                <div className="container mx-auto p-4 max-w-6xl fade-in">
+                    <h2 className="text-4xl font-bold mb-6 px-2">{videoDetails.title}</h2>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-2 bg-black aspect-video rounded-xl overflow-hidden shadow-2xl shadow-black/50 relative flex items-center justify-center">
+                            {isVideoLoading && !videoEnded && (
+                                <div className="absolute z-10"> <LoadingSpinner text="Loading video..." /> </div>
+                            )}
+                            <video key={videoDetails.video_file_url} controls autoPlay src={videoDetails.video_file_url} className={`w-full h-full transition-opacity duration-500 ${isVideoLoading ? 'opacity-0' : 'opacity-100'}`} onEnded={() => { setVideoEnded(true); setIsVideoLoading(false); }} onCanPlay={() => setIsVideoLoading(false)} onWaiting={() => setIsVideoLoading(true)}>
+                                Your browser does not support the video tag.
+                            </video>
+                        </div>
+                        <div className="ailibrary-embed"></div>
+                        <div className="bg-gray-800 p-5 rounded-xl flex flex-col">
+                            <h3 className="font-bold text-2xl mb-3">Transcript</h3>
+                            <p className="text-gray-300 flex-grow overflow-y-auto p-3 bg-gray-900/70 rounded-md h-48 lg:h-full">{videoDetails.caption_content}</p>
+                        </div>
+                    </div>
+                    <div className="mt-6 text-center">
+                        {videoEnded && (<div className="p-4 bg-green-900/50 rounded-lg mb-4 animate-pulse"><p className="text-lg text-green-200">Great job! Ready for a quick challenge?</p></div>)}
+                        <button onClick={handleTakeQuiz} disabled={!videoEnded || isQuizLoading} className="w-full md:w-1/2 bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-lg text-xl transition-all transform hover:scale-105 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:scale-100">{isQuizLoading ? 'Generating Quiz...' : 'Let\'s Take the Quiz!'}</button>
+                    </div>
+                </div>
+            );
+        }
+
+        function QuizPage() {
+            const { navigate, currentQuiz, setCurrentQuiz } = useContext(AppContext);
+            const [answers, setAnswers] = useState({});
+            const [score, setScore] = useState(null);
+
+            if (!currentQuiz || !currentQuiz.questions || currentQuiz.questions.length === 0) return <div className="text-center mt-20 p-4">Quiz not available. <button onClick={() => navigate('#/dashboard')} className="text-blue-400 hover:underline">Return to dashboard</button> to generate a quiz.</div>;
+
+            const handleAnswerChange = (qId, option) => setAnswers(prev => ({ ...prev, [qId]: option }));
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (Object.keys(answers).length !== currentQuiz.questions.length) return;
+                let correct = 0;
+                currentQuiz.questions.forEach(q => { if (answers[q.id] === q.answer) correct++; });
+                setScore({ correct, total: currentQuiz.questions.length, pct: Math.round((correct / currentQuiz.questions.length) * 100) });
+            };
+
+            if (score !== null) {
+                const handleReturnToDashboard = () => {
+                    setCurrentQuiz(null); // Clear the quiz data before navigating
+                    navigate('#/dashboard');
+                };
+
+                return (
+                    <div className="container mx-auto p-4 text-center max-w-2xl fade-in">
+                        <div className="bg-gray-800 p-10 rounded-xl shadow-lg">
+                            <h2 className="text-4xl font-bold mb-4">Quiz Result</h2>
+                            <p className="text-7xl font-extrabold my-6 gradient-text">{score.pct}%</p>
+                            <p className="text-2xl text-gray-300 mb-8">You answered {score.correct} out of {score.total} questions correctly.</p>
+                            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                                <button onClick={handleReturnToDashboard} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg text-lg transition-transform transform hover:scale-105">Create a New Video</button>
+                                <button onClick={handleReturnToDashboard} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-8 rounded-lg text-lg transition-transform transform hover:scale-105">Back to Dashboard</button>
+                                <button onClick={() => { setScore(null); setAnswers({}); }} className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-8 rounded-lg text-lg transition-transform transform hover:scale-105">Try Quiz Again</button>
+                            </div>
+                            <div className="ailibrary-embed"></div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="container mx-auto p-4 max-w-3xl fade-in">
+                    <h2 className="text-4xl font-bold mb-8 text-center">Check Your Knowledge!</h2>
+                    <form onSubmit={handleSubmit} className="bg-gray-800 p-8 rounded-xl space-y-8">
+                        {currentQuiz.questions.map((q, i) => (
+                            <div key={q.id}>
+                                <p className="font-semibold text-xl mb-4">{i + 1}. {q.text}</p>
+                                <div className="space-y-3">{q.options.map(o => (
+                                    <label key={o} className={`flex items-center p-4 bg-gray-700/50 rounded-lg cursor-pointer hover:bg-gray-700 transition-all border-2 border-transparent ${answers[q.id] === o ? 'bg-blue-800/50 border-blue-500' : 'border-gray-700/50'}`}>
+                                        <input type="radio" name={`q_${q.id}`} value={o} onChange={() => handleAnswerChange(q.id, o)} required className="form-radio h-5 w-5 text-blue-500 bg-gray-800 border-gray-600 focus:ring-blue-500 shrink-0" />
+                                        <span className="ml-4 text-lg text-gray-200">{o}</span>
+                                    </label>
+                                ))}</div>
+                            </div>
+                        ))}
+                        <button type="submit" className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-lg text-xl transition-transform transform hover:scale-105 disabled:bg-gray-600 disabled:cursor-not-allowed" disabled={Object.keys(answers).length !== currentQuiz.questions.length}>Submit Answers</button>
+                    </form>
+                    <div className="ailibrary-embed"></div>
+                </div>
+            );
+        }
+
+        // --- App Router ---
+        function App() {
+            const { route, session, navigate, isSessionLoading } = useContext(AppContext);
+
+            useEffect(() => {
+                if (isSessionLoading) return;
+
+                const protectedRoutes = ['#/dashboard', '#/watch/', '#/quiz/', '#/loading'];
+                const isProtectedRoute = protectedRoutes.some(p => route.startsWith(p));
+                const authRoutes = ['#/login'];
+                const isAuthRoute = authRoutes.some(p => route.startsWith(p));
+
+                if (!session && isProtectedRoute) {
+                    navigate('#/login');
+                } else if (session && isAuthRoute) {
+                    navigate('#/dashboard');
+                } else if (!session && !isAuthRoute && route !== '#/') {
+                    navigate('/');
+                }
+            }, [session, route, navigate, isSessionLoading]);
+
+
+            if (isSessionLoading) {
+                return <div className="min-h-screen flex items-center justify-center"><LoadingSpinner /></div>;
+            }
+
+            const renderPage = () => {
+                if (route.startsWith('#/loading')) return <LoadingPage />;
+                if (route.startsWith('#/watch/')) return <VideoPlayerPage />;
+                if (route.startsWith('#/quiz/')) return <QuizPage />;
+                if (route.startsWith('#/dashboard')) return <DashboardPage />;
+                if (route.startsWith('#/login')) return <AuthPage />;
+                return <LandingPage />;
+            };
+
+            return (<div className="min-h-screen"><Header /><main className="py-8">{renderPage()}</main></div>);
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<AppProvider><App /></AppProvider>);
+    </script>
+</body>
+
+</html>

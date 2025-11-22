@@ -1,0 +1,106 @@
+{
+    "explain me about parabola": {
+        "video_path_parts": [
+            "generated_explain_me_about_parabola",
+            "480p15",
+            "ExplainMeAboutParabola.mp4"
+        ],
+        "transcript": "Ever noticed the perfect arch of a bridge or a thrown  ball's path? These are parabolas, fundamental in nature and engineering.  A parabola consists of all points equidistant from a fixed  point, the 'focus', and a fixed line, the 'directrix'.  For a parabola opening upwards with its vertex at the origin, the equation  is $x^2 = 4py$. 'p' is the distance to the focus and directrix.  Satellite dishes utilize this. Parallel signals reflect to  the focus, amplifying reception for clear communication.  The parabola: elegantly defined by focus and  directrix, crucial in technology and design."
+    },
+    "explain me about matrix, and its basic operations": {
+        "video_path_parts": [
+            "generated_explain_me_about_matrix_and_its_basic_operations",
+            "480p15",
+            "ExplainMeAboutMatrixAndItsBasicOperations.mp4"
+        ],
+        "transcript": "Ever wondered how computers process images, or how  transformations in 3D graphics are managed? The answer  often lies in matrices \u2013 powerful mathematical tools!  A matrix is a rectangular array of numbers or expressions, arranged  in rows and columns. Each entry is called an element.  Here's a specific example: a 2x3 matrix. It has 2 rows and  3 columns. The dimensions are crucial, defining its 'shape' for operations.  Basic operations like addition are element-wise. You  simply add corresponding elements. Scalar multiplication means  multiplying every element by a single number.  So, matrices are structured arrays for organizing data. They  enable basic operations like addition and scalar multiplication, fundamental  for fields like computer graphics and data science."
+    },
+    "explain me the concept of SHA256 with respect to cryptography": {
+        "video_path_parts": [
+            "generated_explain_me_the_concept_of_sha256_with_respect_to_cryptography",
+            "480p15",
+            "ExplainMeTheConceptOfSha256WithRespectToCryptography.mp4"
+        ],
+        "transcript": "Ever wondered how secure digital signatures or cryptocurrencies  like Bitcoin truly work? They rely on powerful  mathematical tools. Today, we'll uncover the secret behind  SHA-256, a cornerstone of modern cryptography.  At its core, SHA-256 is a hash function. Think of it  as a digital fingerprint generator. You input any data, and it  produces a fixed-size string of characters, uniquely representing that input.  Specifically, SHA-256 generates a 256-bit hash. It's *one-way*:  practically impossible to reverse engineer the original data.  And it's *collision-resistant*: finding two different inputs that  yield the same hash is computationally infeasible.  This means even a tiny change to input data  completely alters its SHA-256 hash. This property makes it  perfect for verifying data integrity, ensuring files haven't been  tampered with, or securing transactions in a blockchain.  In essence, SHA-256 provides an unforgeable, tamper-proof  digital fingerprint for any data. It's a  silent guardian, securing our digital world."
+    },
+    "generate a video on Entity-Relationship diagram ": {
+        "video_path_parts": [
+            "generated_generate_a_video_on_entityrelationship_diagram_",
+            "480p15",
+            "GenerateAVideoOnEntityRelationshipDiagram.mp4"
+        ],
+        "transcript": "Ever wondered how complex information systems organize data? This  is where Entity-Relationship Diagrams, or ERDs, come in. They  are visual tools for modeling databases, showing how real-world  objects, called entities, connect to each other.  ERDs use rectangles for entities like 'Student', ovals for  attributes such as 'Name' or 'ID', and diamonds for  relationships like 'enrolls in'. Lines connect them, often with  cardinality: a student can enroll in many courses.  Visualize a 'Student' entity linked via 'enrolls in' to a  'Course' entity, each with specific attributes. ERDs are crucial for  designing efficient databases, clarifying complex data structures at a glance."
+    },
+    "circle": {
+        "video_path_parts": [
+            "generated_circle",
+            "480p15",
+            "CircleScene.mp4"
+        ],
+        "transcript": "Have you ever wondered how to precisely describe the  elegant shape of a circle using mathematics? Today, we'll  unlock the powerful equation that defines every perfect circle.  Before we dive in, let's quickly recall coordinate points (x,y) and  the Pythagorean theorem. It states that for a right triangle, a-squared  plus b-squared equals c-squared, where c is the hypotenuse.  For a circle centered at the origin, any point (x,y) on its  edge is 'r' distance away. Using the Pythagorean theorem, with sides 'x',  'y', and hypotenuse 'r', we find: x-squared plus y-squared equals r-squared.  If the center shifts to any point (h,k), the equation becomes:  (x minus h) squared plus (y minus k) squared equals r-squared.  Here, (h,k) is the center, and 'r' is the radius.  For instance, a circle centered at (1,2) with a radius of 3 would have  the equation: (x minus 1) squared plus (y minus 2) squared equals 9.  So, the equation of a circle precisely captures  all points equidistant from a central point. It's  a beautiful application of the Pythagorean theorem!"
+    },
+    "generate a animated video on database management": {
+        "video_path_parts": [
+            "generated_generate_a_animated_video_on_database_management",
+            "480p15",
+            "GenerateAAnimatedVideoOnDatabaseManagement.mp4"
+        ],
+        "transcript": "Ever wonder how companies like Amazon handle billions of customer  records and transactions every day? It's all thanks to effective  Database Management. At its core, a database is an organized  collection of data. Without proper management, it's just a chaotic  pile, making retrieval and integrity a nightmare.  This is where Database Management Systems, or DBMS, come in.  They are powerful software tools that enable us to efficiently  store, retrieve, update, and secure data. DBMS provides a structured  approach, preventing inconsistencies and ensuring reliable data access.  Imagine online banking: your account balance, transaction history, and  personal details are all securely managed by a DBMS,  ensuring accuracy and trust. So, Database Management is crucial  for organizing vast information, powering modern applications, and maintaining  data integrity across our digital world."
+    },
+    "SHA 256 in cryptography": {
+        "video_path_parts": [
+            "generated_sha_256_in_cryptography",
+            "480p15",
+            "Sha256InCryptography.mp4"
+        ],
+        "transcript": "Ever wondered how your digital identity or transactions stay  secure online? It's often thanks to cryptographic hash functions  like SHA-256, vital for data integrity and blockchain.  At its core, a hash function takes any input and  produces a fixed-size string, a 'fingerprint'. Cryptographic hashes are special:  they're one-way, meaning you can't reverse them, and highly collision-resistant.  SHA-256, or Secure Hash Algorithm 256-bit, transforms any input data  into a unique, fixed-length 256-bit hash. This output is typically  displayed as a 64-character hexadecimal string. Even a tiny change  in the input completely alters the hash \u2013 this 'avalanche  effect' is key. The vast 2^256 possible outputs make finding  two inputs with the same hash astronomically difficult.  In blockchain, every transaction is hashed, creating an unbreakable  chain. For passwords, systems store your password's SHA-256 hash,  never the password itself, significantly boosting security.  In essence, SHA-256 provides a robust, irreversible digital fingerprint  for data, underpinning the security of countless digital systems."
+    },
+    "Generate a video on concepts of geometric circles": {
+        "video_path_parts": [
+            "generated_generate_a_video_on_concepts_of_geometric_circles",
+            "480p15",
+            "GenerateAVideoOnConceptsOfGeometricCircles.mp4"
+        ],
+        "transcript": "Circles are fundamental shapes, universally recognized for their perfect  symmetry. But how exactly do we define a circle  in geometry and why is it so important?  At its core, a circle is the set of all  points equidistant from a central point. This distance is called  the radius, and the central point is simply the center.  Consider a coordinate plane. If the center is at the  origin (0,0) and a point on the circle is (x,y),  the distance formula gives us x-squared plus y-squared equals r-squared.  For example, a circle with a radius of 3 centered  at the origin has the equation x-squared plus y-squared equals  9. Every point on its circumference satisfies this relationship.  So, the equation x-squared plus y-squared equals r-squared  elegantly captures the essence of a circle, defining  its perfect form from its center and radius."
+    },
+    "circles": {
+        "video_path_parts": [
+            "generated_circles",
+            "480p15",
+            "Circles.mp4"
+        ],
+        "transcript": "Circles are everywhere, from planets to pizzas! But  how do we describe their perfect symmetry mathematically?  Let's discover the equation of a circle.  A circle is all points equidistant from its center. We'll  use the distance formula: d equals the square root of  (x2 minus x1) squared plus (y2 minus y1) squared. This  connects directly to the Pythagorean theorem on a coordinate plane.  A circle is all points equidistant from a center (h, k). Any point  on the circle is (x, y), with a constant distance 'r', the radius.  Applying the distance formula, we get: the square root of (x-h) squared plus  (y-k) squared equals r. Squaring both sides reveals the standard equation of a  circle: (x-h) squared plus (y-k) squared equals r squared.  For a circle at (2, -3) with radius 5: (x-2) squared plus  (y-(-3)) squared equals 5 squared. This simplifies to (x-2) squared plus (y+3)  squared equals 25. See how the center and radius fit!  So, (x-h) squared plus (y-k) squared equals r squared beautifully  defines any circle, connecting its center (h,k) and radius 'r'  to its shape. A truly powerful and elegant equation!"
+    },
+    "RDD in Big Data technologies": {
+        "video_path_parts": [
+            "generated_rdd_in_big_data_technologies",
+            "480p15",
+            "RddInBigDataTechnologies.mp4"
+        ],
+        "transcript": "How do big data systems handle massive datasets efficiently and  reliably? The secret often lies in something called an RDD.  Big Data processing needs fault tolerance and parallelization.  Traditional data structures struggle with this at scale.  An RDD, or Resilient Distributed Dataset, is a fundamental  data structure in frameworks like Apache Spark. Resilient means  it can rebuild lost partitions using its lineage. Distributed  means it's spread across many machines for parallel processing.  And Dataset refers to an immutable collection of elements.  Imagine filtering a huge log file. An RDD lets  you define transformations like 'map' or 'filter' on your  data, which are then executed lazily and in parallel.  RDDs are key to scalable, fault-tolerant Big Data  processing, enabling efficient parallel computation across clusters."
+    },
+    "Push Down Automata": {
+        "video_path_parts": [
+            "generated_push_down_automata",
+            "480p15",
+            "PushDownAutomata.mp4"
+        ],
+        "transcript": "How do computers understand programming languages? The magic behind  parsing complex syntax often involves a powerful theoretical machine  called a Push Down Automaton, or PDA.  Remember Finite Automata? They recognize regular languages. But for  more complex patterns, like matching parentheses, we need memory.  PDAs add a stack for this very purpose.  A Push Down Automaton combines a finite automaton with an unbounded stack.  It operates by reading an input symbol, considering its current state, and  the top of its stack. Based on these, it transitions to a  new state and modifies the stack, either by pushing or popping symbols.  Consider checking well-formed parentheses. An opening parenthesis is pushed onto  the stack. A closing one causes a pop, *if* the  stack top is an opening parenthesis. If the stack is  empty at the end, the string is valid.  PDAs are essential for recognizing context-free languages, providing the  memory needed to parse structured data. They are fundamental  to compilers and understanding programming language grammars."
+    },
+    "dinosuar running in road": {
+        "video_path_parts": [
+            "generated_dinosuar_running_in_road",
+            "480p15",
+            "DinosuarRunningInRoad.mp4"
+        ],
+        "transcript": "Imagine modeling a system, like a car on  a predictable road. But what happens when an  entirely unexpected variable, say, a 'dinosaur', suddenly appears?  In mathematics, we often use linear functions to predict  motion. A simple y equals mx plus b describes  a constant speed, assuming a smooth, undisturbed path.  The 'dinosaur in the road' represents a sudden, non-linear perturbation.  It's a stochastic event, an outlier that defies our initial,  simplified models, forcing us to rethink our assumptions.  Consider a point moving along this predicted path.  The 'dinosaur' introduces chaos, forcing the path to  deviate, demonstrating the limits of deterministic predictions.  So, while models provide structure, remember that real-world  scenarios often hide 'dinosaurs,' reminding us to build  flexibility and account for the unpredictable."
+    },
+    "Turing machine for subtraction": {
+        "video_path_parts": [
+            "generated_turing_machine_for_subtraction",
+            "480p15",
+            "TuringMachineForSubtraction.mp4"
+        ],
+        "transcript": "Ever wondered if a simple theoretical machine can  perform complex arithmetic? Today, we explore how a  Turing machine tackles subtraction, a fundamental operation.  A Turing machine works on an infinite tape with symbols,  using a head that reads, writes, and moves based on  its internal state. For subtraction, we'll represent numbers in unary  format, like three ones for the number three.  To subtract 'N' from 'M', we initially set up the tape with 'M'  ones, a separator, then 'N' ones. The machine then systematically 'crosses out' one  '1' from the minuend 'M' for every '1' in the subtrahend 'N'.  Let's visualize 5 minus 3. We have five ones, a separator, and  three ones. The machine would repeatedly mark a '1' from the first  group and a '1' from the second group until the second group  is depleted. The remaining ones are our answer: two.  This shows how even complex tasks like subtraction can  be reduced to basic symbolic manipulations, demonstrating the immense  power and universality of a Turing machine."
+    }
+}
