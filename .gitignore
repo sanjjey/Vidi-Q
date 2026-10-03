@@ -3,3 +3,17 @@ temp/
 .venv/
 __pycache__/
 media/
+*.db
+ffmpeg.exe
+generated_*.py
+
+# AI Agents, IDE configs & tooling
+.agents/
+.cursor/
+.cursorrules
+.clinerules
+.windsurfrules
+.github/
+AGENTS.md
+CLAUDE.md
+graphify-out/

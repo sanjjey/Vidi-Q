@@ -1,225 +1,191 @@
-# Educational Video Generator
+# VIDI-Q: AI-Powered Multilingual Educational Video Platform
 
-An AI-powered educational video generation system that creates animated videos using Manim and integrates with Google Gemini for content generation. The system provides a Flask-based web API for generating, managing, and serving educational videos with voiceovers and quizzes.
+VIDI-Q is a high-performance educational video generation platform that converts any complex concept into synchronized, mathematical animations using **Manim Community Edition** and **manim-voiceover**. 
 
-## Features
+It features an asynchronous **FastAPI** backend with HTTP 206 byte-range streaming, multi-tier LLM failover (**Gemini 2.5 Flash → Groq GPT-OSS 120B → Local Ollama**), multi-language narration with colloquial **hybrid code-mixing** (e.g. Tanglish, Hinglish), and dynamic **pedagogical depth selection** (surface, detailed, in-depth).
 
-- **AI-Powered Video Generation**: Uses Google Gemini to generate Manim scripts for educational content
-- **Automatic Voiceover**: Integrates with Manim Voiceover for text-to-speech narration
-- **Video Caching**: Intelligent caching system to avoid regenerating existing videos
-- **Quiz Generation**: Automatic quiz creation based on video transcripts using Gemini API
-- **Web API**: RESTful Flask API for video generation and management
-- **Cross-Origin Support**: CORS-enabled for frontend integration
-- **External Integrations**: Zapier webhook support for automation workflows
-- **Supabase Integration**: Database support for user management and data storage
+---
 
-## Prerequisites
+## ⚡ Core Features
 
-- Python 3.8+
-- FFmpeg (required for Manim video processing)
-- Google Gemini API key
-- Node.js (for frontend development, if applicable)
+- **Multi-Provider LLM Failover**: Automatically cascades across providers to prevent downtime:
+  1. Google Gemini (`gemini-2.5-flash`)
+  2. Groq Cloud (`openai/gpt-oss-120b`, 131k context)
+  3. Local Ollama (`llama3` / `qwen2.5:7b` via `http://localhost:11434/v1`)
+- **Multilingual & Hybrid Code-Mixing**:
+  - Supports 9+ languages (English, Tamil, Hindi, Spanish, French, German, Japanese, Italian, Portuguese).
+  - **Conversational Hybrid Mode**: Uses natural colloquial sentence structure (Tanglish/Hinglish) while keeping technical scientific terms (*"Black Hole"*, *"Event Horizon"*, *"Gravity"*) in standard English.
+  - Automatic unicode font injection (`Nirmala UI` for Indic scripts, `Yu Gothic` for Japanese) to prevent tofu boxes (`□□□`).
+- **Adjustable Pedagogical Depth**:
+  - ⚡ **Surface Level** (~30–60s): 3 sections, punchy visual metaphor.
+  - 📖 **Detailed** (~2–3 min): 5–6 sections, step-by-step mechanism, practical examples, formulas.
+  - 🔬 **In-Depth** (~4–6 min): 7–9 sections, first-principles derivation, animated simulation, edge cases.
+- **FastAPI Asynchronous Engine**:
+  - Non-blocking Manim rendering via threadpools.
+  - Server-Sent Events (SSE) for live, real-time generation progress updates.
+  - Native **HTTP 206 Partial Content** byte-range video streaming for instantaneous browser scrubbing.
+- **Dual Database Architecture**:
+  - Works with local PostgreSQL (`psycopg2`) or standalone fallback SQLite (`vidi_q_local.db`) with zero external setup needed.
+  - Supabase client integration for cloud auth & storage.
+- **Smart Cleanup & Caching**:
+  - Automatic purge of Manim partial chunk files (`uncached_*.mp4`) saving 100–300MB disk per generation.
+  - Multi-dimensional cache key based on `{topic}_{language}_{quality}_{depth}`.
+- **Interactive Quiz Generator**:
+  - Automatically synthesizes 4 multiple-choice questions from video transcripts in the selected language and depth.
 
-## Environment Variables
+---
 
-Create a `.env` file in the root directory of the project and add the following environment variables:
+## 🛠️ Prerequisites
+
+- **Python 3.10+** (Tested on Python 3.11)
+- **FFmpeg** installed and added to system `PATH`
+- At least one LLM API key (**Google Gemini** or **Groq**) or a running **Ollama** instance
+
+---
+
+## ⚙️ Environment Variables
+
+Create a `.env` file in the root directory:
 
 ```env
+# Server
+PORT=5000
+DEFAULT_LLM_PROVIDER=gemini
+
+# Google Gemini
 GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-2.5-flash
+
+# Groq Cloud
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=openai/gpt-oss-120b
+
+# Local Ollama (Optional)
+LOCAL_LLM_URL=http://localhost:11434/v1
+LOCAL_LLM_MODEL=llama3
+
+# Database (PostgreSQL or SQLite fallback)
+DB_MODE=postgres
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/vidi_q
+
+# External Integrations (Optional)
 ZAPIER_WEBHOOK_URL=your_zapier_webhook_url_here
 SUPABASE_URL=your_supabase_url_here
 SUPABASE_ANON_KEY=your_supabase_anon_key_here
 ```
 
-- `GEMINI_API_KEY`: Your Google Gemini API key for AI-powered content generation **(Give the same in index.html file at line 191 and llm_handler.py at line 7)**
-- `ZAPIER_WEBHOOK_URL`: Your Zapier webhook URL for automation workflows
-- `SUPABASE_URL`: Your Supabase project URL for database integration **(Give the same in index.html file at line 55)**
-- `SUPABASE_ANON_KEY`: Your Supabase anonymous key for client-side access **(Give the same in index.html file at line 56)**
+---
 
-**Note**: Never commit the `.env` file to version control. It should be added to your `.gitignore` file.
+## 🚀 Installation & Setup
 
-## Installation
-
-1. **Clone the repository**:
+1. **Clone repository**:
    ```bash
    git clone <repository-url>
-   cd educational-video-generator
+   cd VIDI-Q
    ```
 
-2. **Install Python dependencies**:
+2. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Install FFmpeg**:
-   - Download from [ffmpeg.org](https://ffmpeg.org/download.html)
-   - Add FFmpeg's `bin` directory to your system's PATH
+3. **Verify FFmpeg**:
+   ```bash
+   ffmpeg -version
+   ```
 
-4. **Set up environment variables**:
-   Create a `.env` file in the root directory with the required API keys and URLs as shown above.
+4. **Start the FastAPI server**:
+   ```bash
+   python server.py
+   ```
+   The backend will start at `http://127.0.0.1:5000` (or `http://localhost:5000`).
 
-## Usage
-
-### Starting the Server
-
-Run the Flask development server:
-
-```bash
-python server.py
-```
-
-The server will start on `http://localhost:5000`
-
-### Generating Videos
-
-#### Via API
-
-Send a POST request to generate a new video:
-
-```bash
-curl -X POST http://localhost:5000/api/generate-video \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Explain the concept of geometric circles"}'
-```
-
-#### Via Frontend
-
-If you have a frontend application, use the provided API endpoints to integrate video generation functionality.
-
-### API Endpoints
-
-#### Video Generation
-- `POST /api/generate-video`: Generate a new educational video
-  - Body: `{"prompt": "your topic here"}`
-  - Returns: Video URL, transcript, and title
-
-#### Video Management
-- `GET /api/list-videos`: List all generated videos
-- `GET /api/video-details/<video_id>`: Get details for a specific video
-
-#### Quiz Generation
-- `POST /api/generate-quiz`: Generate a quiz based on video transcript
-  - Body: `{"caption_content": "transcript text", "video_id": "video_id"}`
-
-#### External Integration
-- `POST /send-to-zapier`: Send data to Zapier webhook
-
-#### Static Files
-- `GET /videos/<script_name>/<resolution>/<filename>`: Serve video files
-
-## Project Structure
-
-```
-educational-video-generator/
-├── main.py                 # Core video generation logic
-├── server.py               # Flask API server
-├── llm_handler.py          # Google Gemini integration
-├── config.py               # Configuration settings
-├── requirements.txt        # Python dependencies
-├── generation_cache.json   # Video generation cache
-├── system_prompt.md        # System prompts for AI
-├── .env                    # Environment variables (not in version control)
-├── media/
-│   ├── videos/            # Generated video files
-│   ├── images/            # Generated images
-│   ├── Tex/               # LaTeX rendered equations
-│   ├── texts/             # Text overlays
-│   └── voiceovers/        # Audio files
-└── index.html             # Frontend interface
-```
-
-## How It Works
-
-1. **Content Generation**: The system uses Google Gemini to generate Manim Python scripts based on user prompts
-2. **Script Processing**: Generated scripts are validated and executed using Manim
-3. **Video Rendering**: Manim renders the animation with voiceover narration
-4. **Caching**: Successful generations are cached to prevent redundant processing
-5. **API Serving**: Generated videos are served through the Flask API
-
-## Caching Mechanism
-
-The system implements intelligent caching to improve performance:
-
-- Videos are cached based on the input prompt
-- Cache entries include video file paths and transcripts
-- Cache is stored in `generation_cache.json`
-- Automatic cache invalidation when files are missing
-
-## Error Handling
-
-The system includes comprehensive error handling:
-
-- Automatic retry mechanism for failed generations (up to 4 attempts)
-- Timeout protection for long-running Manim processes (5-minute limit)
-- Detailed error logging and user-friendly error messages
-- Graceful degradation when external services are unavailable
-
-## External Integrations
-
-### Google Gemini
-- Used for script generation and quiz creation
-- Requires API key configuration
-- Handles rate limiting and error responses
-
-### Zapier
-- Webhook integration for automation workflows
-- Configurable webhook URL
-- Error handling for webhook failures
-
-### Supabase
-- Database integration for user management
-- Public configuration endpoint for frontend access
-
-## Development
-
-### Adding New Features
-
-1. Extend the `LLMHandler` class in `llm_handler.py` for new AI integrations
-2. Add new API endpoints in `server.py`
-3. Update the caching logic in `main.py` for new data types
-
-### Testing
-
-Run the server in development mode:
-
-```bash
-python server.py
-```
-
-Test video generation with different prompts to ensure reliability.
-
-## Troubleshooting
-
-### Common Issues
-
-1. **FFmpeg not found**: Ensure FFmpeg is installed and in PATH
-2. **Manim timeout**: Complex animations may exceed the 5-minute timeout
-3. **API key errors**: Verify Gemini API key is correctly set in `.env`
-4. **Cache issues**: Delete `generation_cache.json` to clear cache
-
-### Debug Mode
-
-Enable debug logging by setting the Flask app to debug mode in `server.py`.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-## License
-
-[Add your license information here]
-
-## Support
-
-For support and questions:
-- Create an issue in the repository
-- Check the troubleshooting section
-- Review the API documentation
+5. **Launch the Web Interface**:
+   Open `index.html` directly in your browser or serve it with any local static server.
 
 ---
 
-**Note**: This project requires a valid Google Gemini API key for full functionality. Ensure you have appropriate API quotas and billing set up before deployment.
+## 📡 API Reference
+
+### 1. Video Generation
+- **`POST /api/generate-video`**
+  - **Request Body**:
+    ```json
+    {
+      "prompt": "How does Gravity work?",
+      "provider": "gemini",
+      "quality": "draft",
+      "language": "ta",
+      "voice_tld": "co.in",
+      "depth": "detailed",
+      "job_id": "optional-uuid"
+    }
+    ```
+  - **Options**:
+    - `provider`: `"gemini"`, `"groq"`, `"local"`
+    - `quality`: `"draft"` (480p), `"medium"` (720p), `"high"` (1080p)
+    - `language`: `"en"`, `"ta"`, `"hi"`, `"es"`, `"fr"`, `"de"`, `"ja"`, `"it"`, `"pt"`
+    - `voice_tld`: `"com"` (US), `"co.in"` (Indian), `"co.uk"` (British), `"com.au"` (Aussie), `"ca"` (Canadian)
+    - `depth`: `"surface"` (~30-60s), `"detailed"` (~2-3m), `"indepth"` (~4-6m)
+  - **Response**:
+    ```json
+    {
+      "video_url": "/videos/how_does_gravity_work/720p30/HowDoesGravityWorkScene.mp4",
+      "caption_content": "[SRT / VTT subtitles]",
+      "title": "How does Gravity work?",
+      "provider": "gemini",
+      "language": "ta",
+      "quality": "medium",
+      "depth": "detailed"
+    }
+    ```
+
+### 2. Live Progress Stream (SSE)
+- **`GET /api/stream-progress/{job_id}`**
+  - Streams real-time pipeline status events (`"Generating animation script..."`, `"Rendering Manim animation..."`).
+
+### 3. Video Streaming
+- **`GET /videos/{script_name}/{resolution}/{filename}`**
+  - Streams video with native **HTTP 206 Partial Content** byte-range support for smooth timeline scrubbing.
+
+### 4. Quiz Generation
+- **`POST /api/generate-quiz`**
+  - **Request Body**:
+    ```json
+    {
+      "caption_content": "Transcript text...",
+      "video_id": "video_id",
+      "language": "ta"
+    }
+    ```
+
+### 5. Authentication (Local & Cloud)
+- **`POST /api/auth/login`** - Authenticate email/password
+- **`POST /api/auth/register`** (or `/api/auth/signup`) - Register new account
+- **`GET /api/auth/session`** - Validate session
+
+---
+
+## 📂 Project Architecture
+
+```
+VIDI-Q/
+├── server.py               # FastAPI backend with SSE and HTTP 206 streaming
+├── main.py                 # Core Manim execution, retry loop, and cache pipeline
+├── llm_handler.py          # LLM orchestrator (Gemini/Groq/Ollama, hybrid prompts, font guard)
+├── db.py                   # Unified DB layer (PostgreSQL with SQLite fallback)
+├── config.py               # Environment configuration and path management
+├── index.html              # Modern dark-mode React/Tailwind frontend interface
+├── generation_cache.json   # Video cache index
+├── requirements.txt        # Python package dependencies
+└── media/                  # Output directory for rendered videos and subtitles
+```
+
+---
+
+## 🛡️ Robustness & Anti-Crash Design
+
+1. **Zero LaTeX Crashes**: LaTeX is omitted in favor of Unicode rendering (`Text("E = mc²")`) to ensure 100% crash-free execution on standard Windows/Linux/macOS machines.
+2. **API Hallucination Guards**: Automatic regex cleanup catches and fixes hallucinated method calls (e.g. `add_voiceover_service` → `set_speech_service`).
+3. **Indic Script Rendering**: Dynamically sets Windows system fonts (`Nirmala UI`) preventing missing glyph tofu boxes (`□□□`).
+4. **Subprocess Sanitization**: Encodes stdout/stderr with UTF-8 `replace` error-handling to prevent Windows OEM/CP1252 character decode crashes.

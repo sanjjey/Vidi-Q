@@ -51,44 +51,158 @@
     <script type="text/babel">
         const { useState, useEffect, createContext, useContext, useMemo } = React;
 
-        // --- INITIALIZE SUPABASE ---
-        const SUPABASE_URL = ''; //enter your url
-        const SUPABASE_ANON_KEY = ''; //enter your anon key
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        
+        // --- SUPABASE CONFIGURATION (Retained for future re-enabling) ---
+        const SUPABASE_URL = ''; // enter your url
+        const SUPABASE_ANON_KEY = ''; // enter your anon key
+        let supabaseClient = null;
+        if (window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY) {
+            try {
+                supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            } catch (err) {
+                console.warn("Supabase init error:", err);
+            }
+        }
 
-        /*
-        -- REQUIRED SUPABASE SETUP --
-        
-        This project uses Supabase for user authentication (Login/Signup).
-        You only need to create a project on Supabase and add your URL and Anon Key above.
-        No database tables are required for this version of the app.
-        */
+        // Backward-compatible alias for existing code
+        const supabase = supabaseClient || {
+            auth: {
+                getUser: async () => ({ data: { user: authService.getLocalUser() }, error: null }),
+                getSession: async () => ({ data: { session: authService.getLocalSession() }, error: null }),
+                onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+                signInWithPassword: async () => ({ error: { message: "Supabase disabled. Using Local Postgres." } }),
+                signUp: async () => ({ error: { message: "Supabase disabled. Using Local Postgres." } }),
+                signOut: async () => {}
+            }
+        };
+
+        // --- AUTH SERVICE (Local Postgres / SQLite with Supabase toggle) ---
+        const authService = {
+            dbMode: 'postgres',
+            getLocalSession() {
+                try {
+                    const s = localStorage.getItem('vidiq_session');
+                    return s ? JSON.parse(s) : null;
+                } catch (e) {
+                    return null;
+                }
+            },
+            getLocalUser() {
+                const s = this.getLocalSession();
+                return s ? s.user : null;
+            },
+            async init() {
+                try {
+                    const res = await fetch('http://localhost:5000/api/public-config');
+                    if (res.ok) {
+                        const conf = await res.json();
+                        this.dbMode = conf.db_mode || 'postgres';
+                    }
+                } catch (e) {
+                    console.log("[Auth] Using local auth mode.");
+                }
+            },
+            async getSession() {
+                if (this.dbMode === 'supabase' && supabaseClient) {
+                    const { data } = await supabaseClient.auth.getSession();
+                    return data.session;
+                }
+                return this.getLocalSession();
+            },
+            async signIn({ email, password }) {
+                if (this.dbMode === 'supabase' && supabaseClient) {
+                    return await supabaseClient.auth.signInWithPassword({ email, password });
+                }
+                const res = await fetch('http://localhost:5000/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    return { error: { message: data.detail || data.error || 'Login failed' } };
+                }
+                const session = data.session || (data.user ? { user: data.user, access_token: 'local_token' } : null);
+                if (session) {
+                    localStorage.setItem('vidiq_session', JSON.stringify(session));
+                }
+                return { data: { session, user: session?.user }, error: null };
+            },
+            async signUp({ email, password, name, phone }) {
+                if (this.dbMode === 'supabase' && supabaseClient) {
+                    return await supabaseClient.auth.signUp({ email, password, options: { data: { name, phone } } });
+                }
+                const res = await fetch('http://localhost:5000/api/auth/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, name, phone })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    return { error: { message: data.detail || data.error || 'Signup failed' } };
+                }
+                const session = data.session || (data.user ? { user: data.user, access_token: 'local_token' } : null);
+                if (session) {
+                    localStorage.setItem('vidiq_session', JSON.stringify(session));
+                }
+                return { data: { session, user: session?.user }, error: null };
+            },
+            async signOut() {
+                if (this.dbMode === 'supabase' && supabaseClient) {
+                    await supabaseClient.auth.signOut();
+                }
+                localStorage.removeItem('vidiq_session');
+                await fetch('http://localhost:5000/api/auth/logout', { method: 'POST' }).catch(() => {});
+            }
+        };
 
         // --- API Services ---
         const apiService = {
             backendUrl: 'http://localhost:5000',
 
-            // Function to generate video
-            async generateVideo(prompt) {
+            // Function to generate video with selectable LLM provider, quality, depth, language, voice, and SSE progress
+            async generateVideo(prompt, provider = 'gemini', model = '', quality = 'draft', language = 'en', voiceTld = 'com', depth = 'surface', onProgress = null) {
+                const jobId = 'job_' + Math.random().toString(36).substring(2, 10);
+                let eventSource = null;
+
+                if (onProgress && window.EventSource) {
+                    try {
+                        eventSource = new EventSource(`${this.backendUrl}/api/stream-progress/${jobId}`);
+                        eventSource.onmessage = (event) => {
+                            try {
+                                const parsed = JSON.parse(event.data);
+                                if (parsed && parsed.message) onProgress(parsed.message);
+                            } catch (e) {}
+                        };
+                    } catch (e) {
+                        console.warn("SSE connection error:", e);
+                    }
+                }
+
                 try {
-                    // Make request to backend to generate video
+                    const user = authService.getLocalUser();
                     const response = await fetch(`${this.backendUrl}/api/generate-video`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ prompt: prompt }),
+                        body: JSON.stringify({
+                            prompt: prompt,
+                            provider: provider,
+                            model: model,
+                            quality: quality,
+                            language: language,
+                            voice_tld: voiceTld,
+                            depth: depth,
+                            job_id: jobId,
+                            user_id: user?.id
+                        }),
                     });
 
                     const data = await response.json();
 
                     if (!response.ok) {
-                        throw new Error(data.error || 'Failed to generate video.');
+                        throw new Error(data.detail || data.error || 'Failed to generate video.');
                     }
 
-                    // Full video URL
                     const fullVideoUrl = this.backendUrl + data.video_url;
-
-                    // Call sendToZapier after the video is successfully generated
                     await this.sendToZapier();
 
                     return {
@@ -98,47 +212,57 @@
                     };
                 } catch (error) {
                     console.error('Error generating video:', error);
-                    throw error; // Optionally rethrow to handle in caller
+                    throw error;
+                } finally {
+                    if (eventSource) {
+                        eventSource.close();
+                    }
                 }
             },
             async sendToZapier(videos) {
                 try {
-                    // Get the authenticated user from Supabase
-                    const { data, error } = await supabase.auth.getUser();
-                    if (error) {
-                        console.error("Error fetching user:", error);
-                        return;
-                    }
+                    const user = authService.getLocalUser();
+                    if (!user) return;
 
-                    const user = data.user;
-
-                    // Prepare the payload to send to Zapier, including the videos
                     const payload = {
-                        name: user.user_metadata?.name,
-                        phone: user.user_metadata?.phone,
-                        email: user.email, // Attach the videos data to the payload
+                        name: user.name || user.user_metadata?.name || 'Student',
+                        phone: user.phone || user.user_metadata?.phone || '',
+                        email: user.email || '',
                     };
 
-                    console.log("Payload being sent to Zapier:", payload);
-
-                    // Send data to Flask backend
-                    const response = await fetch("http://localhost:5000/send-to-zapier", {
+                    await fetch(`${this.backendUrl}/send-to-zapier`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify(payload),
                     });
-
-                    // Check the response from the backend
-                    const result = await response.json();
-                    if (response.ok) {
-                        console.log("Message from backend:", result.message);
-                    } else {
-                        console.error("Error from backend:", result.error || "Unknown error");
-                    }
-
                 } catch (error) {
                     console.error("Error sending data to Zapier:", error);
                 }
+            }
+        };
+
+        // --- Quiz Service (Supports all LLM providers and languages via backend) ---
+        const quizService = {
+            async generateQuiz(captionContent, videoId, provider = 'gemini', model = '', language = 'en') {
+                try {
+                    const res = await fetch('http://localhost:5000/api/generate-quiz', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            caption_content: captionContent,
+                            video_id: videoId,
+                            provider: provider,
+                            model: model,
+                            language: language
+                        })
+                    });
+                    if (res.ok) {
+                        return await res.json();
+                    }
+                } catch (e) {
+                    console.warn("Backend quiz error, attempting fallback:", e);
+                }
+                return await geminiApiService.generateQuizWithGemini(captionContent, videoId);
             }
         };
 
@@ -235,20 +359,17 @@
             const [lastGeneratedVideo, setLastGeneratedVideo] = useState(null);
 
             useEffect(() => {
-                supabase.auth.getSession().then(({ data: { session } }) => {
-                    setSession(session);
-                    setIsSessionLoading(false);
-                });
-
-                const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-                    setSession(session);
+                authService.init().then(() => {
+                    authService.getSession().then((currentSession) => {
+                        setSession(currentSession);
+                        setIsSessionLoading(false);
+                    });
                 });
 
                 const handleHashChange = () => setRoute(window.location.hash || '#/');
                 window.addEventListener('hashchange', handleHashChange);
 
                 return () => {
-                    subscription?.unsubscribe();
                     window.removeEventListener('hashchange', handleHashChange);
                 };
             }, []);
@@ -256,7 +377,7 @@
             const navigate = (path) => { window.location.hash = path; };
 
             const appContextValue = useMemo(() => ({
-                route, navigate, session, isSessionLoading, currentQuiz, setCurrentQuiz,
+                route, navigate, session, setSession, isSessionLoading, currentQuiz, setCurrentQuiz,
                 loadingText, setLoadingText, errorMessage, setErrorMessage,
                 lastGeneratedVideo, setLastGeneratedVideo
             }), [route, session, isSessionLoading, currentQuiz, loadingText, errorMessage, lastGeneratedVideo]);
@@ -275,9 +396,10 @@
         }
 
         function Header() {
-            const { session, navigate } = useContext(AppContext);
+            const { session, setSession, navigate } = useContext(AppContext);
             const handleLogout = async () => {
-                await supabase.auth.signOut();
+                await authService.signOut();
+                if (setSession) setSession(null);
                 navigate('#/');
             };
             return (
@@ -305,7 +427,7 @@
         }
 
         function AuthPage() {
-            const { navigate } = useContext(AppContext);
+            const { setSession, navigate } = useContext(AppContext);
             const [email, setEmail] = useState('');
             const [password, setPassword] = useState('');
             const [isSubmitting, setIsSubmitting] = useState(false);
@@ -316,13 +438,14 @@
             const handleAuth = async (action) => {
                 setIsSubmitting(true);
                 setAuthError(null);
-                const { error } = action === 'login'
-                    ? await supabase.auth.signInWithPassword({ email, password })
-                    : await supabase.auth.signUp({ email, password, options: { data: { name, phone } } });
+                const { data, error } = action === 'login'
+                    ? await authService.signIn({ email, password })
+                    : await authService.signUp({ email, password, name, phone });
 
                 if (error) {
                     setAuthError(error.message);
                 } else {
+                    if (setSession) setSession(data);
                     navigate('#/dashboard');
                 }
                 setIsSubmitting(false);
@@ -391,6 +514,12 @@
         function DashboardPage() {
             const { navigate, setCurrentQuiz, setLoadingText, setErrorMessage, setLastGeneratedVideo } = useContext(AppContext);
             const [prompt, setPrompt] = useState('');
+            const [selectedProvider, setSelectedProvider] = useState('gemini');
+            const [customModel, setCustomModel] = useState('');
+            const [selectedLanguage, setSelectedLanguage] = useState('en');
+            const [selectedVoice, setSelectedVoice] = useState('com');
+            const [selectedQuality, setSelectedQuality] = useState('draft');
+            const [selectedDepth, setSelectedDepth] = useState('surface');
             const [localVideos, setLocalVideos] = useState([]);
             const [isFetching, setIsFetching] = useState(true);
 
@@ -412,15 +541,23 @@
                 setErrorMessage(null);
 
                 try {
-                    setLoadingText("Warming up the AI engine...We will notify you via mail and phone call when the video is ready");
-                    const videoData = await apiService.generateVideo(prompt);
+                    setLoadingText(`Warming up AI engine (${selectedProvider.toUpperCase()})...`);
+                    const videoData = await apiService.generateVideo(
+                        prompt,
+                        selectedProvider,
+                        customModel,
+                        selectedQuality,
+                        selectedLanguage,
+                        selectedVoice,
+                        selectedDepth,
+                        (msg) => setLoadingText(msg)
+                    );
 
-                    setLoadingText("Crafting your interactive quiz...");
-                    const quiz = await geminiApiService.generateQuizWithGemini(videoData.caption_content, 'temp_id');
+                    setLoadingText("Crafting your interactive quiz in target language...");
+                    const quiz = await quizService.generateQuiz(videoData.caption_content, 'temp_id', selectedProvider, customModel, selectedLanguage);
                     setCurrentQuiz(quiz);
 
                     setLastGeneratedVideo(videoData);
-
                     navigate('#/watch/temp');
 
                 } catch (error) {
@@ -436,7 +573,101 @@
                         <p className="text-xl text-gray-400 mb-8">Describe a topic, and our AI will create a video and quiz tailored for you.</p>
                         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                             <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} className="w-full p-5 bg-gray-800 border-2 border-gray-700 rounded-lg text-lg focus:ring-4 focus:ring-blue-500/50 focus:border-blue-500 focus:outline-none transition" rows="4" placeholder="e.g., 'Explain how black holes are formed'"></textarea>
-                            <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-lg text-xl transition-transform transform hover:scale-105 disabled:bg-gray-600" disabled={!prompt.trim()}>Generate Video & Quiz</button>
+                            
+                            {/* Generator Controls Bar */}
+                            <div className="flex flex-wrap items-center justify-between bg-gray-800/90 p-4 rounded-lg border border-gray-700 gap-3 text-left">
+                                {/* LLM Model */}
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Model:</span>
+                                    <select 
+                                        value={selectedProvider} 
+                                        onChange={(e) => setSelectedProvider(e.target.value)}
+                                        className="bg-gray-700 text-white border border-gray-600 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium cursor-pointer"
+                                    >
+                                        <option value="gemini">⚡ Gemini (2.5 Flash)</option>
+                                        <option value="groq">🚀 Groq (GPT-OSS 120B)</option>
+                                        <option value="local">💻 Local (Ollama)</option>
+                                    </select>
+                                </div>
+
+                                {/* Language Selector */}
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Language:</span>
+                                    <select 
+                                        value={selectedLanguage} 
+                                        onChange={(e) => setSelectedLanguage(e.target.value)}
+                                        className="bg-gray-700 text-white border border-gray-600 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium cursor-pointer"
+                                    >
+                                        <option value="en">🇺🇸 English</option>
+                                        <option value="es">🇪🇸 Spanish</option>
+                                        <option value="fr">🇫🇷 French</option>
+                                        <option value="de">🇩🇪 German</option>
+                                        <option value="hi">🇮🇳 Hindi</option>
+                                        <option value="ta">🇮🇳 Tamil</option>
+                                        <option value="ja">🇯🇵 Japanese</option>
+                                        <option value="it">🇮🇹 Italian</option>
+                                        <option value="pt">🇵🇹 Portuguese</option>
+                                    </select>
+                                </div>
+
+                                {/* Voice Accent */}
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Voice:</span>
+                                    <select 
+                                        value={selectedVoice} 
+                                        onChange={(e) => setSelectedVoice(e.target.value)}
+                                        className="bg-gray-700 text-white border border-gray-600 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium cursor-pointer"
+                                    >
+                                        <option value="com">Standard (US)</option>
+                                        <option value="co.uk">British (UK)</option>
+                                        <option value="co.in">Indian</option>
+                                        <option value="com.au">Australian</option>
+                                        <option value="ca">Canadian</option>
+                                    </select>
+                                </div>
+
+                                {/* Depth / Duration */}
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Depth:</span>
+                                    <select 
+                                        value={selectedDepth} 
+                                        onChange={(e) => setSelectedDepth(e.target.value)}
+                                        className="bg-gray-700 text-white border border-gray-600 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium cursor-pointer"
+                                    >
+                                        <option value="surface">⚡ Surface Level (~30-60s)</option>
+                                        <option value="detailed">📖 Detailed (~2-3 min)</option>
+                                        <option value="indepth">🔬 In-Depth (~4-6 min)</option>
+                                    </select>
+                                </div>
+
+                                {/* Quality */}
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Quality:</span>
+                                    <select 
+                                        value={selectedQuality} 
+                                        onChange={(e) => setSelectedQuality(e.target.value)}
+                                        className="bg-gray-700 text-white border border-gray-600 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium cursor-pointer"
+                                    >
+                                        <option value="draft">⚡ Fast Draft (480p)</option>
+                                        <option value="medium">🎬 Balanced (720p)</option>
+                                        <option value="high">🌟 HD (1080p)</option>
+                                    </select>
+                                </div>
+
+                                {selectedProvider === 'local' && (
+                                    <div className="flex items-center gap-2 w-full mt-2">
+                                        <input 
+                                            type="text" 
+                                            placeholder="Local model name (e.g. llama3, qwen2.5:7b)" 
+                                            value={customModel} 
+                                            onChange={(e) => setCustomModel(e.target.value)}
+                                            className="bg-gray-700 text-white placeholder-gray-400 border border-gray-600 rounded-md px-3 py-1.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
+                            <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-lg text-xl transition-transform transform hover:scale-105 disabled:bg-gray-600 shadow-lg shadow-blue-600/30" disabled={!prompt.trim()}>Generate Video & Quiz</button>
                         </form>
                     </div>
                     <div className="ailibrary-embed"></div>
@@ -508,31 +739,24 @@
             const handleTakeQuiz = async () => {
                 if (!videoDetails) return;
 
-                // This part for newly generated videos is fine.
                 if (videoId === 'temp') {
                     navigate('#/quiz/temp');
                     return;
                 }
 
-                // --- Start of Fix ---
-                // Check if the transcript content exists before making an API call.
                 if (!videoDetails.caption_content || videoDetails.caption_content.trim() === '') {
                     setError("Cannot generate quiz: Transcript is missing for this video. Please ensure the backend provides it.");
-                    console.error("Aborting quiz generation because caption_content is missing or empty.", videoDetails);
                     return;
                 }
-                // --- End of Fix ---
 
                 setIsQuizLoading(true);
                 try {
-                    // This call now only runs if caption_content is confirmed to exist.
-                    const quiz = await geminiApiService.generateQuizWithGemini(videoDetails.caption_content, videoDetails.id);
+                    const quiz = await quizService.generateQuiz(videoDetails.caption_content, videoDetails.id);
                     setCurrentQuiz(quiz);
                     navigate(`#/quiz/${videoId}`);
                 } catch (e) {
-                    // This error is likely caused by an invalid API key or network issue.
-                    setError("Failed to generate the quiz. Please check your Gemini API Key and network connection.");
-                    console.error("Error during quiz generation API call:", e);
+                    setError("Failed to generate the quiz. Please check backend connection and API keys.");
+                    console.error("Error during quiz generation:", e);
                 } finally {
                     setIsQuizLoading(false);
                 }

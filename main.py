@@ -1,10 +1,35 @@
+import sys
 import subprocess
 import re
 import traceback
 import shutil
+import os
 from pathlib import Path
 import json
 import llm_handler # Assumes llm_handler.py is in the same directory
+
+# --- Ensure bundled FFmpeg is on PATH ---
+try:
+    import imageio_ffmpeg
+    _ffmpeg_exe = Path(imageio_ffmpeg.get_ffmpeg_exe())
+    _ffmpeg_dir = str(_ffmpeg_exe.parent)
+    # Also ensure cwd (where we copy ffmpeg.exe) is on PATH
+    _cwd = str(Path(__file__).parent.resolve())
+
+    for _d in [_cwd, _ffmpeg_dir]:
+        if _d not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = _d + os.pathsep + os.environ.get("PATH", "")
+
+    # Create ffmpeg.exe alias in project dir if it doesn't exist yet
+    _local_ffmpeg = Path(__file__).parent / "ffmpeg.exe"
+    if not _local_ffmpeg.exists():
+        import shutil as _sh
+        _sh.copy(str(_ffmpeg_exe), str(_local_ffmpeg))
+        print(f"[FFmpeg] Created local alias: {_local_ffmpeg}")
+
+    print(f"[FFmpeg] Bundled binary: {_ffmpeg_exe}")
+except Exception as _e:
+    print(f"[FFmpeg Warning] Could not locate imageio_ffmpeg binary: {_e}")
 
 CACHE_FILE = Path("generation_cache.json")
 
@@ -29,10 +54,13 @@ def parse_srt(file_path):
     if not file_path.exists():
         print(f"Warning: SRT file not found at {file_path}")
         return "Transcript not found."
-    content = file_path.read_text(encoding='utf-8')
-    # Use regex to strip timestamps and line numbers, then join lines
-    text_only = re.sub(r'\d+\n\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}\n', '', content)
-    return text_only.replace('\n', ' ').strip()
+    try:
+        content = file_path.read_text(encoding='utf-8', errors='replace')
+    except Exception:
+        content = file_path.read_text(errors='replace')
+    # Handle both Windows CRLF (\r\n) and Unix LF (\n)
+    text_only = re.sub(r'\d+\r?\n\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}\r?\n', '', content)
+    return text_only.replace('\r\n', ' ').replace('\n', ' ').strip()
 
 def find_scene_class_name(script_content):
     """Finds any class name that inherits from VoiceoverScene in the script."""
@@ -44,18 +72,18 @@ def find_scene_class_name(script_content):
 def run_manim_process(command):
     """
     Runs the Manim command, captures its output, and enforces a timeout to prevent freezes.
+    Uses errors='replace' to avoid UnicodeDecodeError on Windows OEM/CP1252 output.
     """
     try:
-        # Using subprocess.run is a simpler way to handle timeouts and capture output
         process = subprocess.run(
             command,
             capture_output=True,
             text=True,
             encoding='utf-8',
-            timeout=300  # 5-minute timeout
+            errors='replace',
+            timeout=300
         )
         
-        # Print captured output for debugging
         if process.stdout:
             print(f"[Manim STDOUT]:\n{process.stdout.strip()}")
         if process.stderr:
@@ -63,103 +91,122 @@ def run_manim_process(command):
         return process.returncode, process.stdout, process.stderr
 
     except subprocess.TimeoutExpired as e:
-        print("[Manim ERROR]: Process timed out after 5 minutes. It was likely stuck on a network request or complex animation.")
+        print("[Manim ERROR]: Process timed out after 5 minutes.")
         return -1, e.stdout or "", e.stderr or "Manim process timed out and was terminated."
 
     except Exception as e:
-        print(f"[Manim ERROR]: An unexpected error occurred while running the Manim process: {e}")
+        print(f"[Manim ERROR]: Unexpected error in Manim process: {e}")
         return -1, "", str(e)
 
 
-def generate_video_process(topic, sanitized_topic_module):
+def generate_video_process(topic, sanitized_topic_module, llm_provider=None, llm_model=None,
+                           quality="draft", language="en", voice_tld="com", depth="surface", status_callback=None):
     """ 
-    Orchestrates the entire video generation pipeline with a retry/fix and caching mechanism.
+    Orchestrates the entire video generation pipeline with retry, failover, and cleanup.
+    Supports resolution quality (-pql, -pqm, -pqh), depth levels (surface, detailed, indepth), multi-language and voice accents.
     """
-    # --- FFmpeg Check ---
-    if shutil.which("ffmpeg") is None:
-        raise RuntimeError(
-            "CRITICAL ERROR: FFmpeg not found.\n"
-            "Manim and manim-voiceover require FFmpeg to combine video and audio segments.\n"
-            "Please download it from ffmpeg.org, install it, and add its 'bin' directory "
-            "to your system's PATH environment variable before running the application again."
-        )
+    # --- Quality mapping ---
+    quality_map = {
+        "draft": ("-pql", "480p15"),
+        "medium": ("-pqm", "720p30"),
+        "high": ("-pqh", "1080p60")
+    }
+    quality_flag, res_folder = quality_map.get(str(quality).lower(), ("-pql", "480p15"))
 
-    # --- Caching Logic ---
+    # --- FFmpeg Check ---
+    _ffmpeg_found = shutil.which("ffmpeg") or shutil.which("ffmpeg.exe")
+    if not _ffmpeg_found:
+        try:
+            import imageio_ffmpeg as _iio
+            _ffmpeg_found = _iio.get_ffmpeg_exe()
+        except Exception:
+            pass
+    if not _ffmpeg_found:
+        raise RuntimeError("CRITICAL ERROR: FFmpeg not found on system PATH.")
+
+    cache_key = f"{topic}_{language}_{quality}_{depth}"
     cache = load_cache()
-    if topic in cache:
-        cached_data = cache[topic]
-        # Verify that the cached file still exists
+    if cache_key in cache:
+        cached_data = cache[cache_key]
         video_path = Path.cwd() / "media" / "videos" / "/".join(cached_data["video_path_parts"])
         if video_path.exists():
-            print(f"--- Serving '{topic}' from cache. ---")
+            print(f"--- Serving '{topic}' ({depth}) from cache. ---")
+            if status_callback:
+                status_callback("Serving from cache...")
             return cached_data["video_path_parts"], cached_data["transcript"]
         else:
-            print(f"--- Cached file for '{topic}' not found. Regenerating. ---")
-            # Invalidate this cache entry
-            del cache[topic]
+            del cache[cache_key]
 
+    llm = llm_handler.LLMHandler(provider=llm_provider, model=llm_model)
+    print(f"Starting video generation for topic: {topic} (using {llm.provider}, lang: {language}, quality: {quality}, depth: {depth})")
+    if status_callback:
+        status_callback(f"Generating animation script with {llm.provider.upper()} ({depth} mode)...")
 
-    llm = llm_handler.LLMHandler()
-    
-    print(f"Starting video generation for topic: {topic}")
-    
     sanitized_topic_class = re.sub(r'[^a-zA-Z0-9]', '', topic.title())
+    if not sanitized_topic_class.endswith("Scene"):
+        sanitized_topic_class = f"{sanitized_topic_class}Scene"
     script_name = f"generated_{sanitized_topic_module}"
     script_path = Path(f"{script_name}.py")
     
     manim_script_content = None
     last_error = ""
     
-    # Retry loop (up to 2 attempts)
+    # Retry loop (up to 4 attempts)
     for attempt in range(4):
         try:
             if attempt == 0:
-                print("Generating initial Manim script with Gemini...")
-                manim_script_content = llm.generate_content(topic, sanitized_topic_class)
-            else: # This is a retry attempt
-                print(f"\n--- RETRY ATTEMPT {attempt} ---")
+                manim_script_content = llm.generate_content(
+                    topic, sanitized_topic_class, language=language, voice_tld=voice_tld, depth=depth
+                )
+            else:
+                print(f"\n--- RETRY ATTEMPT {attempt} ({llm.provider}) ---")
+                if status_callback:
+                    status_callback(f"Fixing script with AI (Attempt {attempt + 1})...")
                 manim_script_content = llm.fix_code(manim_script_content, last_error)
 
             script_path.write_text(manim_script_content, encoding='utf-8')
-            print(f"Manim script saved to {script_path}")
-
             scene_class_name = find_scene_class_name(manim_script_content)
-            print(f"Found Manim scene class: {scene_class_name}")
 
             manim_command = [
-                "manim", "-pql", str(script_path), scene_class_name, "--disable_caching"
+                sys.executable, "-m", "manim", quality_flag, str(script_path), scene_class_name, "--disable_caching"
             ]
             
-            print(f"\n--- Running Manim (Attempt {attempt + 1}) ---")
-            print(f"Command: {' '.join(manim_command)}\n")
-            
+            print(f"\n--- Running Manim (Attempt {attempt + 1}, {quality_flag}) ---")
+            if status_callback:
+                status_callback("Rendering Manim animation & synthesizing voiceover...")
+
             return_code, stdout, stderr = run_manim_process(manim_command)
-            
-            print("\n--- Manim Finished ---")
             
             if return_code == 0:
                 print("Manim rendering completed successfully.")
+                if status_callback:
+                    status_callback("Packaging video & transcript...")
                 
-                media_dir = Path.cwd() / "media" / "videos" / script_name / "480p15"
+                media_dir = Path.cwd() / "media" / "videos" / script_name / res_folder
                 video_file = media_dir / f"{scene_class_name}.mp4"
                 srt_file = media_dir / f"{scene_class_name}.srt"
 
                 if not video_file.exists():
                     raise FileNotFoundError(f"Manim ran, but output video was not found at: {video_file}")
-                
-                print(f"Found video file: {video_file}")
-                print(f"Found SRT file: {srt_file}")
+
+                # --- Optimization: Clean up intermediate partial chunks to prevent disk bloat ---
+                partial_dir = media_dir / "partial_movie_files"
+                if partial_dir.exists():
+                    try:
+                        shutil.rmtree(partial_dir, ignore_errors=True)
+                        print(f"[Cleanup] Removed partial movie files in {partial_dir}")
+                    except Exception as _ce:
+                        print(f"[Cleanup Notice] Could not remove partial files: {_ce}")
 
                 transcript = parse_srt(srt_file)
-                video_path_parts = [script_name, "480p15", f"{scene_class_name}.mp4"]
+                video_path_parts = [script_name, res_folder, f"{scene_class_name}.mp4"]
 
-                # --- Save to Cache on Success ---
+                # Save to cache
                 new_cache_entry = {
                     "video_path_parts": video_path_parts,
                     "transcript": transcript
                 }
-                save_to_cache(topic, new_cache_entry, cache)
-                print(f"--- Saved '{topic}' to cache. ---")
+                save_to_cache(cache_key, new_cache_entry, cache)
 
                 if script_path.exists():
                     script_path.unlink()
@@ -168,14 +215,23 @@ def generate_video_process(topic, sanitized_topic_module):
 
             else:
                 print(f"Manim failed with return code {return_code}.")
-                last_error = stderr or stdout 
+                # Strip harmless warnings (SoX, runpy) so AI sees true exception
+                raw_err = stderr or stdout
+                clean_err_lines = [
+                    line for line in raw_err.splitlines()
+                    if "sox" not in line.lower()
+                    and "manim.__main__" not in line
+                    and "proceed here:" not in line.lower()
+                    and "http://sox" not in line.lower()
+                    and "path variables" not in line.lower()
+                ]
+                last_error = "\n".join(clean_err_lines).strip() or raw_err 
 
         except Exception as e:
             print(f"An error occurred in the generation process: {e}")
             traceback.print_exc()
             last_error = traceback.format_exc()
 
-    # If the loop finishes without success
     if script_path.exists():
         script_path.unlink()
     
